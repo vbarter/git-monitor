@@ -1,0 +1,31 @@
+[package]
+name = "git-monitor"
+version = "0.1.0"
+edition = "2021"
+description = "Real-time Git file change monitoring terminal tool with animations"
+authors = ["Git Monitor Contributors"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/vbarter/git-monitor"
+homepage = "https://github.com/vbarter/git-monitor"
+keywords = ["git", "tui", "terminal", "monitor", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+rust-version = "1.70"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+tachyonfx = "0.9"
+git2 = "0.19"
+notify = "7.0"
+notify-debouncer-mini = "0.5"
+tokio = { version = "1.42", features = ["full"] }
+color-eyre = "0.6"
+chrono = "0.4"
+futures = "0.3"
+devicons = "0.6"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
