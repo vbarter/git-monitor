@@ -1,13 +1,16 @@
-# Git Monitor
+<p align="center">
+  <img src="assets/logo.svg" alt="git-monitor" width="600">
+</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/rust-1.70%2B-orange.svg" alt="Rust Version">
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg" alt="Platform">
+  <img src="https://img.shields.io/github/stars/vbarter/git-monitor?style=social" alt="GitHub Stars">
 </p>
 
 <p align="center">
-  一个美观的、实时 Git 文件变更监控终端 UI 工具，带有动画效果。
+  <strong>一个美观的、实时 Git 文件变更监控终端 UI 工具，带有动画效果。</strong>
 </p>
 
 <p align="center">
