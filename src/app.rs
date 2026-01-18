@@ -71,10 +71,8 @@ impl App {
     }
 
     pub fn tick(&mut self) {
-        // Clean up old animations (older than 1 second)
-        let now = Instant::now();
-        self.recently_changed
-            .retain(|(_, time)| now.duration_since(*time).as_millis() < 1000);
+        // Animation cleanup is handled by is_recently_changed() and get_change_progress()
+        // We keep recently_changed records for stable sorting by modification time
     }
 
     pub fn start_watcher(&mut self, sender: mpsc::UnboundedSender<Event>) -> Result<()> {
@@ -110,25 +108,35 @@ impl App {
             }
         }
 
-        // Collect recently changed paths for sorting (within 3 seconds for sorting priority)
-        let recent_paths: std::collections::HashSet<String> = self
+        // Build a map of file paths to their modification times for sorting
+        let change_times: std::collections::HashMap<String, Instant> = self
             .recently_changed
             .iter()
-            .filter(|(_, time)| now.duration_since(*time).as_millis() < 3000)
-            .map(|(p, _)| p.clone())
+            .cloned()
             .collect();
 
-        // Sort files: recently changed files first, then by path
+        // Sort files: by modification time (newest first), then by path for files without recorded time
         self.files.sort_by(|a, b| {
-            let a_recent = recent_paths.contains(&a.path);
-            let b_recent = recent_paths.contains(&b.path);
+            let a_time = change_times.get(&a.path);
+            let b_time = change_times.get(&b.path);
 
-            match (a_recent, b_recent) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => a.path.cmp(&b.path),
+            match (a_time, b_time) {
+                // Both have modification times: sort by time descending (newest first)
+                (Some(t_a), Some(t_b)) => t_b.cmp(t_a),
+                // Only a has time: a comes first
+                (Some(_), None) => std::cmp::Ordering::Less,
+                // Only b has time: b comes first
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                // Neither has time: sort by path
+                (None, None) => a.path.cmp(&b.path),
             }
         });
+
+        // Clean up modification time records for files that no longer exist
+        let current_paths: std::collections::HashSet<&str> =
+            self.files.iter().map(|f| f.path.as_str()).collect();
+        self.recently_changed
+            .retain(|(path, _)| current_paths.contains(path.as_str()));
 
         // Restore selection to the same file if possible
         if let Some(path) = selected_path {
