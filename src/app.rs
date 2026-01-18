@@ -89,13 +89,14 @@ impl App {
         // Get current selected file path to maintain selection after sort
         let selected_path = self.files.get(self.selected_index).map(|f| f.path.clone());
 
+        // get_status() now returns files sorted by modification time (newest first)
         self.files = self.repo.get_status()?;
         self.branch_name = self.repo.current_branch()?;
         self.last_update = Instant::now();
 
         let now = Instant::now();
 
-        // Mark changed files for animation
+        // Mark changed files for animation effect
         for path in &changed_paths {
             // Find matching file in the list (handle both exact and partial matches)
             for file in &self.files {
@@ -108,31 +109,7 @@ impl App {
             }
         }
 
-        // Build a map of file paths to their modification times for sorting
-        let change_times: std::collections::HashMap<String, Instant> = self
-            .recently_changed
-            .iter()
-            .cloned()
-            .collect();
-
-        // Sort files: by modification time (newest first), then by path for files without recorded time
-        self.files.sort_by(|a, b| {
-            let a_time = change_times.get(&a.path);
-            let b_time = change_times.get(&b.path);
-
-            match (a_time, b_time) {
-                // Both have modification times: sort by time descending (newest first)
-                (Some(t_a), Some(t_b)) => t_b.cmp(t_a),
-                // Only a has time: a comes first
-                (Some(_), None) => std::cmp::Ordering::Less,
-                // Only b has time: b comes first
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                // Neither has time: sort by path
-                (None, None) => a.path.cmp(&b.path),
-            }
-        });
-
-        // Clean up modification time records for files that no longer exist
+        // Clean up animation records for files that no longer exist
         let current_paths: std::collections::HashSet<&str> =
             self.files.iter().map(|f| f.path.as_str()).collect();
         self.recently_changed

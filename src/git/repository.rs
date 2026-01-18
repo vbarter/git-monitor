@@ -1,6 +1,7 @@
 use color_eyre::Result;
 use git2::{DiffOptions, Repository, Status, StatusOptions};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 /// File status types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,7 +21,7 @@ impl FileStatus {
             FileStatus::Added => "A",
             FileStatus::Deleted => "D",
             FileStatus::Renamed => "R",
-            FileStatus::Untracked => "?",
+            FileStatus::Untracked => "U",
             FileStatus::Conflicted => "!",
         }
     }
@@ -36,6 +37,8 @@ pub struct FileChange {
     pub additions: i32,
     /// Number of lines deleted
     pub deletions: i32,
+    /// File modification time from filesystem
+    pub modified_time: Option<SystemTime>,
 }
 
 /// Git repository wrapper
@@ -81,24 +84,42 @@ impl GitRepository {
 
             if let Some(file_status) = file_status {
                 let (additions, deletions) = self.get_line_changes(&path).unwrap_or((0, 0));
+                // Get file modification time from filesystem
+                let modified_time = self.get_file_mtime(&path);
                 files.push(FileChange {
                     path,
                     status: file_status,
                     staged,
                     additions,
                     deletions,
+                    modified_time,
                 });
             }
         }
 
-        // Sort by status priority then by path
+        // Sort by modification time (newest first), then by path for files without mtime
         files.sort_by(|a, b| {
-            let priority_a = Self::status_priority(&a.status, a.staged);
-            let priority_b = Self::status_priority(&b.status, b.staged);
-            priority_a.cmp(&priority_b).then_with(|| a.path.cmp(&b.path))
+            match (&a.modified_time, &b.modified_time) {
+                // Both have modification times: sort by time descending (newest first)
+                (Some(t_a), Some(t_b)) => t_b.cmp(t_a),
+                // Only a has time: a comes first
+                (Some(_), None) => std::cmp::Ordering::Less,
+                // Only b has time: b comes first
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                // Neither has time: sort by path
+                (None, None) => a.path.cmp(&b.path),
+            }
         });
 
         Ok(files)
+    }
+
+    /// Get file modification time from filesystem
+    fn get_file_mtime(&self, path: &str) -> Option<SystemTime> {
+        let full_path = self.path.join(path);
+        std::fs::metadata(&full_path)
+            .ok()
+            .and_then(|m| m.modified().ok())
     }
 
     fn parse_status(status: Status) -> (Option<FileStatus>, bool) {
@@ -136,18 +157,6 @@ impl GitRepository {
         }
 
         (None, false)
-    }
-
-    fn status_priority(status: &FileStatus, staged: bool) -> u8 {
-        match (staged, status) {
-            (true, _) => 0,                       // Staged files first
-            (false, FileStatus::Conflicted) => 1, // Conflicts
-            (false, FileStatus::Modified) => 2,   // Modified
-            (false, FileStatus::Added) => 3,      // Added
-            (false, FileStatus::Deleted) => 4,    // Deleted
-            (false, FileStatus::Renamed) => 5,    // Renamed
-            (false, FileStatus::Untracked) => 6,  // Untracked last
-        }
     }
 
     fn get_line_changes(&self, path: &str) -> Result<(i32, i32)> {
