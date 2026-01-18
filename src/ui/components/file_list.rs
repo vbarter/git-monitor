@@ -41,10 +41,20 @@ pub fn render_file_list(frame: &mut Frame, app: &App, area: Rect) {
             // Get file type icon
             let file_icon = FileIcon::from_filename(&filename);
 
+            // Calculate number width for alignment (e.g., " 1." vs "10.")
+            let total_files = app.files.len();
+            let num_width = if total_files >= 100 {
+                4 // "100."
+            } else if total_files >= 10 {
+                3 // "10."
+            } else {
+                2 // "1."
+            };
+
             // Calculate available space for filename and directory
-            // Format: "icon  filename directory... S"
-            // Fixed parts: icon(1-2) + space(1) + space(1) + status(1) = ~5 chars
-            let fixed_width = 5;
+            // Format: "N. icon  filename directory... S"
+            // Fixed parts: num(2-4) + space(1) + icon(1-2) + space(1) + space(1) + status(1)
+            let fixed_width = num_width + 1 + 5;
             let available_for_path = inner_width.saturating_sub(fixed_width);
 
             // Build the display strings
@@ -52,13 +62,13 @@ pub fn render_file_list(frame: &mut Frame, app: &App, area: Rect) {
                 format_filename_and_dir(&filename, &directory, available_for_path);
 
             // Calculate padding to right-align status
-            // icon(2) + space(1) + filename + dir_with_space + padding + status(1) = inner_width
+            // num(N) + space(1) + icon(2) + space(1) + filename + dir_with_space + padding + status(1) = inner_width
             let dir_display_len = if display_dir.is_empty() {
                 0
             } else {
                 display_dir.len() + 1 // +1 for space before dir
             };
-            let content_len = 3 + display_filename.len() + dir_display_len;
+            let content_len = num_width + 1 + 3 + display_filename.len() + dir_display_len;
             let padding = inner_width.saturating_sub(content_len + 1); // +1 for status char
 
             // Calculate animation state
@@ -91,7 +101,10 @@ pub fn render_file_list(frame: &mut Frame, app: &App, area: Rect) {
             };
 
             // Build styled spans
+            let num_display = format!("{:>width$} ", i + 1, width = num_width);
             let mut spans = vec![
+                // Line number
+                Span::styled(num_display, Style::default().fg(Theme::SUBTEXT).dim()),
                 // File type icon (with animation)
                 Span::styled(
                     format!("{} ", file_icon.icon),
@@ -228,5 +241,159 @@ fn interpolate_color(from: Color, to: Color, factor: f64) -> Color {
             Color::Rgb(r, g, b)
         }
         _ => to,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== split_path tests ====================
+
+    #[test]
+    fn test_split_path_with_directory() {
+        let (filename, directory) = split_path("src/ui/components/file_list.rs");
+        assert_eq!(filename, "file_list.rs");
+        assert_eq!(directory, "src/ui/components");
+    }
+
+    #[test]
+    fn test_split_path_single_directory() {
+        let (filename, directory) = split_path("src/main.rs");
+        assert_eq!(filename, "main.rs");
+        assert_eq!(directory, "src");
+    }
+
+    #[test]
+    fn test_split_path_no_directory() {
+        let (filename, directory) = split_path("README.md");
+        assert_eq!(filename, "README.md");
+        assert_eq!(directory, "");
+    }
+
+    #[test]
+    fn test_split_path_deep_nested() {
+        let (filename, directory) = split_path("a/b/c/d/e/f.txt");
+        assert_eq!(filename, "f.txt");
+        assert_eq!(directory, "a/b/c/d/e");
+    }
+
+    // ==================== format_filename_and_dir tests ====================
+
+    #[test]
+    fn test_format_filename_and_dir_enough_space() {
+        let (filename, dir) = format_filename_and_dir("main.rs", "src", 20);
+        assert_eq!(filename, "main.rs");
+        assert_eq!(dir, "src");
+    }
+
+    #[test]
+    fn test_format_filename_and_dir_no_directory() {
+        let (filename, dir) = format_filename_and_dir("README.md", "", 20);
+        assert_eq!(filename, "README.md");
+        assert_eq!(dir, "");
+    }
+
+    #[test]
+    fn test_format_filename_and_dir_truncate_directory() {
+        // filename(7) + space(1) + dir needs truncation
+        let (filename, dir) = format_filename_and_dir("main.rs", "src/ui/components", 15);
+        assert_eq!(filename, "main.rs");
+        // Available for dir: 15 - 7 - 1 = 7, so truncate with "..."
+        assert!(dir.starts_with("..."));
+    }
+
+    #[test]
+    fn test_format_filename_and_dir_no_space_for_directory() {
+        // filename(10) fits in available(12), but no space for directory
+        let (filename, dir) = format_filename_and_dir("config.toml", "src", 12);
+        assert_eq!(filename, "config.toml");
+        assert_eq!(dir, "");
+    }
+
+    #[test]
+    fn test_format_filename_and_dir_truncate_filename() {
+        let (filename, dir) = format_filename_and_dir("extremely_long_filename.rs", "src", 10);
+        // Filename alone is too long, truncate it
+        assert!(filename.ends_with("..."));
+        assert_eq!(dir, "");
+    }
+
+    #[test]
+    fn test_format_filename_and_dir_exact_fit() {
+        // filename(4) + space(1) + dir(3) = 8
+        let (filename, dir) = format_filename_and_dir("test", "abc", 8);
+        assert_eq!(filename, "test");
+        assert_eq!(dir, "abc");
+    }
+
+    // ==================== calculate_pulse_brightness tests ====================
+
+    #[test]
+    fn test_calculate_pulse_brightness_at_start() {
+        let brightness = calculate_pulse_brightness(0.0);
+        // At progress=0, sin(0)=0, so brightness = (0+1)/2 * 1 = 0.5
+        assert!((brightness - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_calculate_pulse_brightness_at_end() {
+        let brightness = calculate_pulse_brightness(1.0);
+        // At progress=1, factor (1-progress) = 0, so brightness = 0
+        assert!((brightness - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_calculate_pulse_brightness_in_range() {
+        // Brightness should always be between 0 and 1
+        for i in 0..=100 {
+            let progress = i as f64 / 100.0;
+            let brightness = calculate_pulse_brightness(progress);
+            assert!(brightness >= 0.0 && brightness <= 1.0,
+                "Brightness {} out of range at progress {}", brightness, progress);
+        }
+    }
+
+    // ==================== interpolate_color tests ====================
+
+    #[test]
+    fn test_interpolate_color_factor_zero() {
+        let from = Color::Rgb(0, 0, 0);
+        let to = Color::Rgb(255, 255, 255);
+        let result = interpolate_color(from, to, 0.0);
+        assert_eq!(result, Color::Rgb(0, 0, 0));
+    }
+
+    #[test]
+    fn test_interpolate_color_factor_one() {
+        let from = Color::Rgb(0, 0, 0);
+        let to = Color::Rgb(255, 255, 255);
+        let result = interpolate_color(from, to, 1.0);
+        assert_eq!(result, Color::Rgb(255, 255, 255));
+    }
+
+    #[test]
+    fn test_interpolate_color_factor_half() {
+        let from = Color::Rgb(0, 0, 0);
+        let to = Color::Rgb(200, 100, 50);
+        let result = interpolate_color(from, to, 0.5);
+        assert_eq!(result, Color::Rgb(100, 50, 25));
+    }
+
+    #[test]
+    fn test_interpolate_color_non_rgb_returns_to() {
+        let from = Color::Red;
+        let to = Color::Blue;
+        let result = interpolate_color(from, to, 0.5);
+        assert_eq!(result, Color::Blue);
+    }
+
+    #[test]
+    fn test_interpolate_color_mixed_types() {
+        let from = Color::Red;
+        let to = Color::Rgb(100, 100, 100);
+        let result = interpolate_color(from, to, 0.5);
+        // Non-RGB from returns to
+        assert_eq!(result, Color::Rgb(100, 100, 100));
     }
 }
